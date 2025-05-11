@@ -2,216 +2,330 @@
 <html lang="uk">
   <head>
     <meta charset="UTF-8" />
-    <title>Обхід графа: BFS і DFS</title>
-    <script src="https://unpkg.com/cytoscape@3.24.0/dist/cytoscape.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Мінімальний Кістяк (Статичний Граф, Вершини по колу)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
     <style>
       body {
         font-family: sans-serif;
+        margin: 20px;
         display: flex;
         flex-direction: column;
         align-items: center;
       }
-      h1 {
+      #controls {
+        margin-bottom: 20px;
+        text-align: center;
+        padding: 15px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      #cy-container {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-around;
+        width: 100%;
+        max-width: 1200px;
+      }
+      #cy-wrapper,
+      #mst-cy-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
         margin-bottom: 20px;
       }
-      .graph-container {
-        display: flex;
-        justify-content: center;
-        gap: 50px;
-        margin-top: 20px;
-      }
-      .graph-box {
-        border: 1px solid #ccc;
-        width: 500px;
+      #cy,
+      #mst-cy {
+        width: 100%;
+        min-width: 300px;
         height: 500px;
+        border: 1px solid #ccc;
+        box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+      }
+      @media (min-width: 768px) {
+        #cy-wrapper,
+        #mst-cy-wrapper {
+          width: 48%;
+        }
+      }
+      h1 {
+        text-align: center;
+        color: #333;
+        margin-bottom: 20px;
+      }
+      h2 {
+        text-align: center;
+        color: #555;
+        font-size: 1.2em;
+        margin-top: 5px;
+        margin-bottom: 10px;
       }
       button {
-        margin-top: 10px;
+        padding: 10px 15px;
+        font-size: 16px;
+        cursor: pointer;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        margin: 5px;
+        transition: background-color 0.2s ease-in-out;
+      }
+      button:hover:not(:disabled) {
+        background-color: #0056b3;
+      }
+      button:disabled {
+        background-color: #ccc;
+        cursor: not-allowed;
+      }
+      #status {
+        margin-top: 15px;
+        font-size: 1.1em;
+        color: #555;
+        min-height: 2em;
+        background-color: #e9ecef;
+        padding: 10px;
+        border-radius: 5px;
       }
     </style>
   </head>
   <body>
-    <h1>Обхід графа: BFS DFS</h1>
+    <h1>Побудова Мінімального Кістяка (Вершини по колу)</h1>
 
-    <div class="graph-container">
+    <div id="controls">
       <div>
-        <div id="bfsGraph" class="graph-box"></div>
-        <button onclick="runBFS()">Почати BFS</button>
+        <button id="start-algorithm-btn" disabled>
+          Почати Алгоритм (<span id="algorithm-name"></span>)
+        </button>
+        <button id="next-step-btn" disabled>Наступний Крок</button>
       </div>
-      <div>
-        <div id="dfsGraph" class="graph-box"></div>
-        <button onclick="runDFS()">Почати DFS</button>
+      <div id="status">Граф генерується на основі фіксованих параметрів...</div>
+    </div>
+
+    <div id="cy-container">
+      <div id="cy-wrapper">
+        <h2>Початковий Граф</h2>
+        <div id="cy"></div>
+      </div>
+      <div id="mst-cy-wrapper">
+        <h2>Мінімальний Кістяк (покроково)</h2>
+        <div id="mst-cy"></div>
       </div>
     </div>
 
+    <script src="graphLab.js"></script>
+
     <script>
-      class Graph {
-        constructor() {
-          this.matrix = [];
-          this.seed = 4401;
-          this.m = 2 ** 32;
-          this.k = 0.845;
-        }
+      let cy, mstCy;
+      let graphProcessor;
+      let algorithmInstance;
+      let mstNodes = new Set();
+      const startAlgorithmBtn = document.getElementById('start-algorithm-btn');
+      const nextStepBtn = document.getElementById('next-step-btn');
+      const statusDiv = document.getElementById('status');
+      const algorithmNameSpan = document.getElementById('algorithm-name');
 
-        random() {
-          this.seed = (1103515245 * this.seed + 12345) % this.m;
-          return (this.seed / this.m) * 2;
-        }
-
-        matrixGenerate(size = 10) {
-          this.matrix = [];
-          for (let i = 0; i < size; i++) {
-            const row = [];
-            for (let j = 0; j < size; j++) {
-              let val = this.random() * this.k;
-              row.push(val < 1 ? 0 : 1);
-            }
-            this.matrix.push(row);
-          }
-        }
-
-        findStart() {
-          for (let i = 0; i < this.matrix.length; i++) {
-            if (this.matrix[i].some((v) => v === 1)) return i;
-          }
-          return 0;
-        }
-
-        getTraversalSteps(type = 'BFS') {
-          const visited = new Set();
-          const steps = [];
-          const structure = [this.findStart()];
-          const isDFS = type === 'DFS';
-
-          while (structure.length > 0) {
-            const node = isDFS ? structure.pop() : structure.shift();
-            if (!visited.has(node)) {
-              visited.add(node);
-              steps.push({ type: 'visit', node });
-
-              for (
-                let neighbor = 0;
-                neighbor < this.matrix.length;
-                neighbor++
-              ) {
-                if (
-                  this.matrix[node][neighbor] === 1 &&
-                  !visited.has(neighbor)
-                ) {
-                  steps.push({ type: 'tree-edge', from: node, to: neighbor });
-                  isDFS ? structure.push(neighbor) : structure.push(neighbor);
-                }
-              }
-            }
-          }
-
-          return steps;
-        }
+      function initializeCytoscapeInstance(
+        containerId,
+        elements,
+        layoutOptions
+      ) {
+        return cytoscape({
+          container: document.getElementById(containerId),
+          elements: elements,
+          style: [
+            {
+              selector: 'node',
+              style: {
+                'background-color': '#66a3ff',
+                label: 'data(label)',
+                width: 25,
+                height: 25,
+                'font-size': '12px',
+                'text-valign': 'center',
+                color: 'white',
+                'text-outline-width': 2,
+                'text-outline-color': '#66a3ff',
+              },
+            },
+            {
+              selector: 'edge',
+              style: {
+                width: 2,
+                'line-color': '#ccc',
+                label: 'data(label)',
+                'font-size': '10px',
+                'text-background-opacity': 1,
+                'text-background-color': 'white',
+                'text-background-padding': '2px',
+                'text-background-shape': 'roundrectangle',
+                'curve-style': 'bezier',
+              },
+            },
+            {
+              selector: 'edge.in-mst',
+              style: { 'line-color': '#28a745', width: 3 },
+            },
+            {
+              selector: 'node.in-mst',
+              style: {
+                'background-color': '#28a745',
+                'text-outline-color': '#28a745',
+              },
+            },
+          ],
+          layout: layoutOptions,
+        });
       }
 
-      function createElementsFromMatrix(matrix) {
-        const elements = [];
-        for (let i = 0; i < matrix.length; i++) {
-          elements.push({ data: { id: '' + i } });
-        }
-        for (let i = 0; i < matrix.length; i++) {
-          for (let j = 0; j < matrix.length; j++) {
-            if (matrix[i][j] === 1) {
-              elements.push({
-                data: { id: `${i}-${j}`, source: '' + i, target: '' + j },
-              });
-            }
+      document.addEventListener('DOMContentLoaded', () => {
+        statusDiv.textContent = `Генерація графа з фіксованими параметрами (n=${N_SIZE}, seed=${N1}${N2}${N3}${N4})...`;
+
+        const staticAdir = generateStaticAdir(N_SIZE, N1, N2, N3, N4);
+
+        graphProcessor = new GraphProcessor(N_SIZE, staticAdir, N1, N2, N3, N4);
+        graphProcessor.generateAundir();
+        graphProcessor.generateWeightMatrixW();
+
+        const initialGraphElements = graphProcessor.getGraphDataForCytoscape();
+
+        if (cy) cy.destroy();
+        cy = initializeCytoscapeInstance(
+          'cy',
+          JSON.parse(JSON.stringify(initialGraphElements)),
+          {
+            name: 'circle',
+            fit: true,
+            padding: 30,
+            clockwise: false,
+            startAngle: (3 / 2) * Math.PI,
           }
+        );
+
+        if (mstCy) mstCy.destroy();
+        const mstInitialNodesElements = initialGraphElements
+          .filter((el) => el.group === 'nodes' || el.data.id)
+          .map((el) => ({ ...el, data: { ...el.data } }));
+        mstCy = initializeCytoscapeInstance('mst-cy', mstInitialNodesElements, {
+          name: 'grid',
+          fit: true,
+          padding: 30,
+        }); // Поки що grid
+        mstNodes.clear();
+        mstInitialNodesElements.forEach((nodeEl) =>
+          mstNodes.add(nodeEl.data.id)
+        );
+
+        if (N4 % 2 === 0) {
+          algorithmNameSpan.textContent = 'Краскала';
+          statusDiv.textContent = `Граф згенеровано. Алгоритм: Краскал (n4=${N4} - парне). Увага: реалізація Краскала не надана в цьому прикладі.`;
+          startAlgorithmBtn.disabled = true;
+          alert(
+            "Увага: Алгоритм Краскала (для парного N4) не реалізовано в цьому прикладі. Кнопка 'Почати Алгоритм' буде неактивна."
+          );
+        } else {
+          algorithmNameSpan.textContent = 'Пріма';
+          algorithmInstance = new PrimAlgorithmStepByStep(
+            N_SIZE,
+            graphProcessor.W
+          );
+          statusDiv.textContent =
+            'Граф згенеровано. Готово до запуску алгоритму Пріма.';
+          startAlgorithmBtn.disabled = false;
         }
-        return elements;
-      }
-
-      const graph = new Graph();
-      graph.matrixGenerate(10); // 10 вершин
-
-      const bfsGraph = cytoscape({
-        container: document.getElementById('bfsGraph'),
-        elements: createElementsFromMatrix(graph.matrix),
-        style: [
-          {
-            selector: 'node',
-            style: {
-              label: 'data(id)',
-              'background-color': '#666',
-              color: '#fff',
-            },
-          },
-          {
-            selector: 'edge',
-            style: {
-              width: 2,
-              'line-color': '#ccc',
-              'target-arrow-shape': 'triangle',
-            },
-          },
-        ],
-        layout: { name: 'circle' },
+        nextStepBtn.disabled = true;
       });
 
-      const dfsGraph = cytoscape({
-        container: document.getElementById('dfsGraph'),
-        elements: createElementsFromMatrix(graph.matrix),
-        style: [
-          {
-            selector: 'node',
-            style: {
-              label: 'data(id)',
-              'background-color': '#666',
-              color: '#fff',
-            },
-          },
-          {
-            selector: 'edge',
-            style: {
-              width: 2,
-              'line-color': '#ccc',
-              'target-arrow-shape': 'triangle',
-            },
-          },
-        ],
-        layout: { name: 'circle' },
+      startAlgorithmBtn.addEventListener('click', () => {
+        if (!algorithmInstance) return;
+        algorithmInstance.start(0);
+
+        const firstStepResult =
+          algorithmInstance.stepsHistory[
+            algorithmInstance.stepsHistory.length - 1
+          ];
+        if (firstStepResult) {
+          statusDiv.textContent = firstStepResult.message;
+          if (firstStepResult.type === 'vertex') {
+            const nodeId = `v${firstStepResult.vertex}`;
+            cy.nodes(`#${nodeId}`).addClass('in-mst');
+            mstCy.nodes(`#${nodeId}`).addClass('in-mst');
+          }
+        }
+
+        startAlgorithmBtn.disabled = true;
+        nextStepBtn.disabled = false;
+        if (algorithmInstance.isFinished) {
+          nextStepBtn.disabled = true;
+          statusDiv.textContent =
+            'Алгоритм завершено (можливо, граф порожній, одновершинний, або це був лише 1 крок).';
+        }
       });
 
-      function runBFS() {
-        const steps = graph.getTraversalSteps('BFS');
-        let index = 0;
+      nextStepBtn.addEventListener('click', () => {
+        if (!algorithmInstance || algorithmInstance.isFinished) return;
 
-        function step() {
-          if (index >= steps.length) return;
-          const action = steps[index++];
-          if (action.type === 'visit') {
-            bfsGraph
-              .getElementById('' + action.node)
-              .style('background-color', 'orange');
+        const stepResult = algorithmInstance.nextStep();
+
+        if (stepResult) {
+          statusDiv.textContent = stepResult.message;
+          if (stepResult.type === 'edge') {
+            const edge = stepResult.edge;
+            cy.edges(
+              `[source="${edge.source}"][target="${edge.target}"], [source="${edge.target}"][target="${edge.source}"]`
+            ).addClass('in-mst');
+            cy.nodes(`#${edge.source}`).addClass('in-mst');
+            cy.nodes(`#${edge.target}`).addClass('in-mst');
+
+            mstCy.nodes(`#${edge.source}`).addClass('in-mst');
+            mstCy.nodes(`#${edge.target}`).addClass('in-mst');
+
+            mstCy.add({
+              group: 'edges',
+              data: {
+                id: `mst-e-${edge.from}-${edge.to}`,
+                source: edge.source,
+                target: edge.target,
+                label: edge.weight.toString(),
+              },
+              classes: 'in-mst',
+            });
+            const mstLayoutName =
+              mstCy.elements('edge').length > 0 ? 'cose' : 'grid';
+            mstCy
+              .layout({
+                name: mstLayoutName,
+                fit: true,
+                padding: 30,
+                animate: true,
+                animationDuration: 300,
+              })
+              .run();
+          } else if (stepResult.type === 'vertex') {
+            const nodeId = `v${stepResult.vertex}`;
+            cy.nodes(`#${nodeId}`).addClass('in-mst');
+            mstCy.nodes(`#${nodeId}`).addClass('in-mst');
           }
-          setTimeout(step, 500);
-        }
 
-        step();
-      }
-
-      function runDFS() {
-        const steps = graph.getTraversalSteps('DFS');
-        let index = 0;
-
-        function step() {
-          if (index >= steps.length) return;
-          const action = steps[index++];
-          if (action.type === 'visit') {
-            dfsGraph
-              .getElementById('' + action.node)
-              .style('background-color', 'green');
+          if (algorithmInstance.isFinished) {
+            nextStepBtn.disabled = true;
+            const totalWeight = algorithmInstance.mstEdges.reduce(
+              (sum, e) => sum + e.weight,
+              0
+            );
+            statusDiv.textContent = `${algorithmNameSpan.textContent} завершено! Загальна вага MST: ${totalWeight}.`;
           }
-          setTimeout(step, 500);
+        } else if (algorithmInstance.isFinished) {
+          nextStepBtn.disabled = true;
+          const totalWeight = algorithmInstance.mstEdges.reduce(
+            (sum, e) => sum + e.weight,
+            0
+          );
+          statusDiv.textContent = `${algorithmNameSpan.textContent} завершено! Загальна вага MST: ${totalWeight}.`;
         }
-
-        step();
-      }
+      });
     </script>
   </body>
 </html>
